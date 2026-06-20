@@ -1,0 +1,18 @@
+config BR2_PACKAGE_BOTSHELL
+	bool "botshell"
+	select BR2_PACKAGE_PYTHON3
+	help
+	  BotShell is the default interactive shell for BotOS Core.
+
+	  It provides a POSIX-compatible command interpreter with
+	  built-in support for the PyBridge engine, which bridges
+	  C-level system commands with Python scripting capabilities.
+
+	  Features:
+	    - POSIX command parsing and execution
+	    - Pipeline and redirection support
+	    - Built-in commands (cd, exit, help, history)
+	    - PyBridge mode (Python bridge)
+	    - .bot script file execution
+
+	  https://github.com/berkelmali/BotOS

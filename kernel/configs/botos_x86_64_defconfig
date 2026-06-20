@@ -1,0 +1,82 @@
+# ============================================================
+# BotOS Core — Kernel Configuration Fragment
+# ============================================================
+# This is a kernel config FRAGMENT, not a full .config.
+# It is merged on top of the x86_64 defconfig by Buildroot
+# via BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES.
+#
+# It enables only the features required by BotOS and disables
+# unnecessary subsystems for a lean kernel image.
+# ============================================================
+
+# ── General ────────────────────────────────────────────────
+CONFIG_LOCALVERSION="-botos"
+CONFIG_DEFAULT_HOSTNAME="botos"
+
+# ── Processor ──────────────────────────────────────────────
+CONFIG_SMP=y
+CONFIG_NR_CPUS=8
+CONFIG_PREEMPT_VOLUNTARY=y
+
+# ── Memory ─────────────────────────────────────────────────
+CONFIG_MEMCG=y
+CONFIG_TMPFS=y
+CONFIG_SHMEM=y
+
+# ── Filesystems ────────────────────────────────────────────
+CONFIG_EXT4_FS=y
+CONFIG_EXT4_FS_POSIX_ACL=y
+CONFIG_EXT4_FS_SECURITY=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+
+# ── Virtio (QEMU / VirtualBox) ────────────────────────────
+CONFIG_VIRTIO=y
+CONFIG_VIRTIO_PCI=y
+CONFIG_VIRTIO_BLK=y
+CONFIG_VIRTIO_NET=y
+CONFIG_VIRTIO_CONSOLE=y
+CONFIG_9P_FS=y
+CONFIG_9P_FS_POSIX_ACL=y
+CONFIG_NET_9P=y
+CONFIG_NET_9P_VIRTIO=y
+
+# ── Serial Console ────────────────────────────────────────
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+
+# ── Networking ─────────────────────────────────────────────
+CONFIG_NET=y
+CONFIG_INET=y
+CONFIG_TCP_CONG_CUBIC=y
+CONFIG_IPV6=y
+CONFIG_PACKET=y
+CONFIG_UNIX=y
+CONFIG_NETFILTER=y
+
+# ── Initramfs ─────────────────────────────────────────────
+CONFIG_BLK_DEV_INITRD=y
+
+# ── Disable Unused ────────────────────────────────────────
+# CONFIG_SOUND is not set
+# CONFIG_USB_SUPPORT is not set
+# CONFIG_WIRELESS is not set
+# CONFIG_WLAN is not set
+# CONFIG_BLUETOOTH is not set
+# CONFIG_NFC is not set
+# CONFIG_MEDIA_SUPPORT is not set
+
+# ── Graphics and Console ──────────────────────────────────
+CONFIG_VT=y
+CONFIG_VT_CONSOLE=y
+CONFIG_FB=y
+CONFIG_DRM=y
+CONFIG_DRM_FBDEV_EMULATION=y
+CONFIG_DRM_SIMPLEDRM=y
+CONFIG_DRM_VMWGFX=y
+CONFIG_DRM_VBOXVIDEO=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY=y
+

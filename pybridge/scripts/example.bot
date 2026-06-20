@@ -1,0 +1,32 @@
+#!/usr/bin/env botshell
+# ============================================================
+# BotOS Core — Example .bot Script
+# ============================================================
+# This is a sample PyBridge script demonstrating BotShell's
+# ability to execute .bot files. Lines starting with '#' are
+# comments. Lines starting with '!' are PyBridge (Python)
+# commands. All other lines are standard shell commands.
+#
+# Usage:
+#   botshell example.bot
+# ============================================================
+
+# ── Standard shell commands ──────────────────────────────────
+echo "=== BotOS Example Script ==="
+echo "Running on BotShell v0.3.0"
+pwd
+
+# ── PyBridge commands ────────────────────────────────────────
+!sysinfo
+!pyver
+
+# ── Inline Python via PyBridge ───────────────────────────────
+!print("Hello from PyBridge!")
+!import math; print(f"Pi = {math.pi:.10f}")
+
+# ── Shell commands with pipes ────────────────────────────────
+echo "Listing /etc:"
+ls /etc | head -10
+
+# ── End ──────────────────────────────────────────────────────
+echo "=== Script Complete ==="

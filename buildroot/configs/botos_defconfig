@@ -1,0 +1,81 @@
+# ============================================================
+# BotOS Core — Buildroot Defconfig
+# ============================================================
+# Minimal Buildroot configuration for building a BotOS
+# development image targeting x86_64 / QEMU / VirtualBox.
+#
+# Usage:
+#   cd /path/to/buildroot
+#   make BR2_EXTERNAL=/path/to/botos/buildroot defconfig \
+#        BR2_DEFCONFIG=/path/to/botos/buildroot/configs/botos_defconfig
+#   make
+# ============================================================
+
+# ── Target Architecture ───────────────────────────────────
+BR2_x86_64=y
+BR2_x86_corei7=y
+
+# ── Toolchain ──────────────────────────────────────────────
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+BR2_GCC_VERSION_13_X=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+BR2_GCC_ENABLE_LTO=y
+
+# ── Kernel ─────────────────────────────────────────────────
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_USE_DEFCONFIG=y
+BR2_LINUX_KERNEL_DEFCONFIG="x86_64"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_BOTOS_PATH)/../kernel/configs/botos_x86_64_defconfig"
+BR2_LINUX_KERNEL_INSTALL_TARGET=y
+
+# ── Filesystem ─────────────────────────────────────────────
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="256M"
+BR2_TARGET_ROOTFS_EXT2_LABEL="botos-root"
+
+# ── Bootloader ─────────────────────────────────────────────
+BR2_TARGET_GRUB2=y
+BR2_TARGET_GRUB2_X86_64_EFI=y
+
+# ── System Configuration ──────────────────────────────────
+BR2_TARGET_GENERIC_HOSTNAME="botos"
+BR2_TARGET_GENERIC_ISSUE="Welcome to BotOS Core v0.3.0"
+BR2_SYSTEM_BIN_SH_BASH=y
+BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_BOTOS_PATH)/overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT=""
+
+# ── Core Packages ──────────────────────────────────────────
+BR2_PACKAGE_BUSYBOX=y
+BR2_PACKAGE_BASH=y
+BR2_PACKAGE_COREUTILS=y
+BR2_PACKAGE_UTIL_LINUX=y
+BR2_PACKAGE_PROCPS_NG=y
+BR2_PACKAGE_HTOP=y
+
+# ── Development Tools ─────────────────────────────────────
+BR2_PACKAGE_CMAKE=y
+BR2_PACKAGE_MAKE=y
+BR2_PACKAGE_GCC_TARGET=y
+BR2_PACKAGE_GDB=y
+
+# ── Python (Antigravity Runtime) ──────────────────────────
+BR2_PACKAGE_PYTHON3=y
+BR2_PACKAGE_PYTHON3_PY_PYC=y
+
+# ── Networking ─────────────────────────────────────────────
+BR2_PACKAGE_DHCPCD=y
+BR2_PACKAGE_OPENSSH=y
+BR2_PACKAGE_CURL=y
+BR2_PACKAGE_WGET=y
+BR2_PACKAGE_IPTABLES=y
+
+# ── Graphics (Phase 6 preparation) ────────────────────────
+# BR2_PACKAGE_XORG7=y
+# BR2_PACKAGE_SDL2=y
+# BR2_PACKAGE_SDL2_X11=y
+
+# ── BotOS Custom Packages ─────────────────────────────────
+# BR2_PACKAGE_BOTSHELL=y

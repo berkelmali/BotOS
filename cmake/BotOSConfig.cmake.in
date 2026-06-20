@@ -1,0 +1,44 @@
+# ============================================================
+# BotOS Core — CMake Package Configuration Template
+# ============================================================
+#
+# This file is processed by CMake's configure_file() to generate
+# BotOSConfig.cmake, which allows external projects to find and
+# link against BotOS libraries via find_package(BotOS).
+# ============================================================
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/BotOSTargets.cmake")
+
+# ── Package metadata ──────────────────────────────────────
+set(BotOS_VERSION       "@PROJECT_VERSION@")
+set(BotOS_VERSION_MAJOR "@PROJECT_VERSION_MAJOR@")
+set(BotOS_VERSION_MINOR "@PROJECT_VERSION_MINOR@")
+set(BotOS_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
+
+# ── Available components ──────────────────────────────────
+set(BotOS_AVAILABLE_COMPONENTS
+    vfs
+    ipc
+    libbot
+    botui
+    botshell
+    botlog
+    botnet
+    botpkg
+)
+
+# ── Component validation ──────────────────────────────────
+foreach(_comp ${BotOS_FIND_COMPONENTS})
+    if(NOT _comp IN_LIST BotOS_AVAILABLE_COMPONENTS)
+        set(BotOS_FOUND FALSE)
+        set(BotOS_NOT_FOUND_MESSAGE
+            "Unsupported component: ${_comp}. "
+            "Available: ${BotOS_AVAILABLE_COMPONENTS}")
+        return()
+    endif()
+    set(BotOS_${_comp}_FOUND TRUE)
+endforeach()
+
+check_required_components(BotOS)

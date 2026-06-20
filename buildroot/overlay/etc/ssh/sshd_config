@@ -1,0 +1,5 @@
+PermitRootLogin yes
+PermitEmptyPasswords yes
+PasswordAuthentication yes
+Subsystem	sftp	/usr/libexec/sftp-server
+AuthorizedKeysFile	.ssh/authorized_keys
