@@ -24,6 +24,7 @@
 #include "resolver.h"
 #include "bot_log.h"
 #include "bot_http.h"
+#include "sha256.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -268,18 +269,42 @@ int botpkg_install(const char *name)
         strncpy(pkg.name, deps.names[i], sizeof(pkg.name) - 1);
         strncpy(pkg.version, "0.0.0", sizeof(pkg.version));
 
-        /* Try to load manifest from cache for proper metadata */
-        char cache_manifest[512];
-        snprintf(cache_manifest, sizeof(cache_manifest),
-                 "%s/%s/manifest.json", g_cache_dir, deps.names[i]);
-        manifest_parse(cache_manifest, &pkg);
-
-        /* Try to download the package archive from remote repository */
         const char *repo_url = getenv("BOTPKG_REPO_URL");
         if (!repo_url) {
             repo_url = "http://repo.botos.dev/packages";
         }
 
+        char cache_pkg_dir[512];
+        snprintf(cache_pkg_dir, sizeof(cache_pkg_dir), "%s/%s", g_cache_dir, deps.names[i]);
+        ensure_dir(cache_pkg_dir);
+
+        char cache_manifest[512];
+        snprintf(cache_manifest, sizeof(cache_manifest),
+                 "%s/%s/manifest.json", g_cache_dir, deps.names[i]);
+
+        /* Fetch the manifest for THIS install — previously this only
+         * ever read from the local cache, which nothing in this
+         * function populated, so pkg stayed at the placeholder
+         * name/version="0.0.0" defaults above and pkg.checksum was
+         * always empty (silently skipping verification) on any fresh
+         * install that hadn't separately run `botpkg update` first. */
+        char manifest_url[1024];
+        snprintf(manifest_url, sizeof(manifest_url), "%s/%s/manifest.json",
+                 repo_url, deps.names[i]);
+        if (bot_http_download(manifest_url, cache_manifest) != 0) {
+            BOT_LOG_WARN("Could not fetch manifest for '%s' — "
+                         "installing with placeholder metadata, no checksum verification",
+                         deps.names[i]);
+        }
+        manifest_parse(cache_manifest, &pkg);
+        /* manifest_parse() may have overwritten name/version with
+         * parsed-but-empty fields on a partial/malformed manifest —
+         * make sure the identity fields this loop depends on can
+         * never end up blank. */
+        if (pkg.name[0] == '\0') strncpy(pkg.name, deps.names[i], sizeof(pkg.name) - 1);
+        if (pkg.version[0] == '\0') strncpy(pkg.version, "0.0.0", sizeof(pkg.version));
+
+        /* Download the package archive from remote repository */
         char archive_url[1024];
         snprintf(archive_url, sizeof(archive_url), "%s/%s/%s.botpkg",
                  repo_url, deps.names[i], deps.names[i]);
@@ -288,13 +313,34 @@ int botpkg_install(const char *name)
         snprintf(cache_archive_path, sizeof(cache_archive_path), "%s/%s/%s.botpkg",
                  g_cache_dir, deps.names[i], deps.names[i]);
 
-        /* Ensure package cache directory exists */
-        char cache_pkg_dir[512];
-        snprintf(cache_pkg_dir, sizeof(cache_pkg_dir), "%s/%s", g_cache_dir, deps.names[i]);
-        ensure_dir(cache_pkg_dir);
-
         /* Download archive */
-        bot_http_download(archive_url, cache_archive_path);
+        int dl_ok = (bot_http_download(archive_url, cache_archive_path) == 0);
+        if (!dl_ok) {
+            printf(" %s[FAIL]%s (download failed: %s)\n", CLR_RED, CLR_RESET, archive_url);
+            free(pkg.deps);
+            continue; /* previously fell through to db_register_package() regardless */
+        }
+
+        /* Verify integrity if the manifest declared a checksum. Repos
+         * that don't publish one yet (pkg.checksum[0] == '\0') get the
+         * same behavior as before this existed — this is additive,
+         * not a new requirement every repo must meet immediately. */
+        if (pkg.checksum[0] != '\0') {
+            char actual_hex[SHA256_HEX_SIZE];
+            if (sha256_file_hex(cache_archive_path, actual_hex) != 0) {
+                printf(" %s[FAIL]%s (could not hash downloaded archive)\n", CLR_RED, CLR_RESET);
+                remove(cache_archive_path);
+                free(pkg.deps);
+                continue;
+            }
+            if (strcmp(actual_hex, pkg.checksum) != 0) {
+                printf(" %s[FAIL]%s (checksum mismatch — expected %.8s..., got %.8s...; archive discarded)\n",
+                       CLR_RED, CLR_RESET, pkg.checksum, actual_hex);
+                remove(cache_archive_path); /* don't leave a corrupt/tampered archive in the cache */
+                free(pkg.deps);
+                continue;
+            }
+        }
 
         /* Register in database */
         if (db_register_package(&pkg) == 0) {
@@ -390,7 +436,8 @@ int botpkg_update(const char *name)
     snprintf(cache_pkg_dir, sizeof(cache_pkg_dir), "%s/%s", g_cache_dir, name);
     ensure_dir(cache_pkg_dir);
 
-    if (bot_http_download(url, cache_manifest_path) == 0) {
+    int dl_ok = (bot_http_download(url, cache_manifest_path) == 0);
+    if (dl_ok) {
         bot_package_t latest;
         memset(&latest, 0, sizeof(latest));
         if (manifest_parse(cache_manifest_path, &latest) == 0) {
@@ -408,9 +455,17 @@ int botpkg_update(const char *name)
             free(latest.deps);
             return 0;
         }
+        printf("  %s[FAIL]%s Downloaded manifest could not be parsed\n\n", CLR_RED, CLR_RESET);
+        remove(cache_manifest_path);
+        return -1;
     }
-    printf("  %s[OK]%s   %s is up to date\n\n", CLR_GREEN, CLR_RESET, name);
-    return 0;
+    /* Previously this fell through to the same "is up to date" message
+     * printed below regardless of whether the download actually
+     * succeeded — a network failure or repo outage was reported to the
+     * user identically to "nothing to do", masking real problems. */
+    printf("  %s[FAIL]%s Could not reach repository to check for updates: %s\n\n",
+           CLR_RED, CLR_RESET, url);
+    return -1;
 }
 
 int botpkg_list_installed(void)

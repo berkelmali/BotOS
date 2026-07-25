@@ -397,6 +397,20 @@ static void on_key_down(const bot_event_t *ev, void *data)
     }
 }
 
+static void on_resize(const bot_event_t *ev, void *data)
+{
+    (void)data;
+    g_width = ev->resize.width;
+    g_height = ev->resize.height;
+    /* Keep window.c's own framebuffer in sync with the new size —
+     * otherwise the blit at the end of render() overflows it as soon
+     * as the window manager resizes this window. */
+    bot_window_resize(g_window, g_width, g_height);
+    bot_canvas_destroy(g_canvas);
+    g_canvas = bot_canvas_create(g_width, g_height);
+    g_needs_redraw = 1;
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc; (void)argv;
@@ -419,6 +433,7 @@ int main(int argc, char *argv[])
     bot_event_on(BOT_EVENT_MOUSE_DOWN, on_mouse_down, NULL);
     bot_event_on(BOT_EVENT_MOUSE_MOVE, on_mouse_move, NULL);
     bot_event_on(BOT_EVENT_KEY_DOWN, on_key_down, NULL);
+    bot_event_on(BOT_EVENT_RESIZE, on_resize, NULL);
 
     bot_window_show(g_window);
     render_info();

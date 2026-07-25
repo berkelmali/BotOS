@@ -1,0 +1,14 @@
+DejaVu Sans Mono
+=================
+
+Bundled with BotOS for anti-aliased UI text rendering (see
+sdk/botui/src/widget.c). Falls back to the built-in bitmap font
+automatically if this file is missing or FreeType isn't available.
+
+Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved.
+Bitstream Vera is a trademark of Bitstream, Inc.
+DejaVu changes are in the public domain.
+
+License: Bitstream Vera License — permits copying, distribution, and
+embedding (including in this project) provided this notice is
+retained. Full text and font sources: https://dejavu-fonts.github.io/

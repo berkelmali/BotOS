@@ -23,14 +23,32 @@
 #define TITLE_H          24
 #define STATUS_HEIGHT    22
 
-static int g_width = 400;
-static int g_height = 300;
+static int g_width = 420;
+static int g_height = 460;
 
 static bot_window_t *g_window = NULL;
 static bot_canvas_t *g_canvas = NULL;
 static int g_needs_redraw = 1;
 
 static char g_selected_theme[32] = "dark";
+
+/* Keep the display label and the on-disk theme.conf value together so
+ * adding a theme is a one-line change here, not a change scattered
+ * across the render/click-handling code below. */
+typedef struct {
+    const char *id;
+    const char *label;
+} theme_option_t;
+
+static const theme_option_t g_themes[] = {
+    { "dark",      "Dark Charcoal (Default)" },
+    { "light",     "Light Lavender" },
+    { "matrix",    "Digital Matrix Green" },
+    { "cyberpunk", "Cyberpunk Neon" },
+    { "forest",    "Forest" },
+    { "ocean",     "Ocean" },
+};
+#define THEME_COUNT (int)(sizeof(g_themes) / sizeof(g_themes[0]))
 
 static void load_current_theme(void)
 {
@@ -70,23 +88,28 @@ static void render_settings(void)
 
     bot_draw_window_frame(g_canvas, 0, 0, g_width, g_height, "System Settings", TITLE_H);
 
-    bot_draw_text(g_canvas, 20, TITLE_H + 20, "Select Color Theme:", th->fg, 1);
+    bot_draw_text(g_canvas, 20, TITLE_H + 16, "Select Color Theme:", th->fg, 1);
 
-    int btn_w = 360;
-    int btn_h = 32;
-    int start_y = TITLE_H + 45;
+    int btn_w = g_width - 40;
+    int btn_h = 30;
+    int start_y = TITLE_H + 38;
 
-    bot_btn_state_t dark_st = (strcmp(g_selected_theme, "dark") == 0) ? BOT_BTN_ACTIVE : BOT_BTN_NORMAL;
-    bot_btn_state_t light_st = (strcmp(g_selected_theme, "light") == 0) ? BOT_BTN_ACTIVE : BOT_BTN_NORMAL;
-    bot_btn_state_t matrix_st = (strcmp(g_selected_theme, "matrix") == 0) ? BOT_BTN_ACTIVE : BOT_BTN_NORMAL;
+    for (int i = 0; i < THEME_COUNT; i++) {
+        bot_btn_state_t st = (strcmp(g_selected_theme, g_themes[i].id) == 0)
+                              ? BOT_BTN_ACTIVE : BOT_BTN_NORMAL;
+        bot_draw_button(g_canvas, 20, start_y + i * (btn_h + 6), btn_w, btn_h,
+                        g_themes[i].label, st);
+    }
 
-    bot_draw_button(g_canvas, 20, start_y, btn_w, btn_h, "Dark Charcoal (Default)", dark_st);
-    bot_draw_button(g_canvas, 20, start_y + 40, btn_w, btn_h, "Light Lavender", light_st);
-    bot_draw_button(g_canvas, 20, start_y + 80, btn_w, btn_h, "Digital Matrix Green", matrix_st);
+    int about_y = start_y + THEME_COUNT * (btn_h + 6) + 12;
+    bot_draw_separator(g_canvas, 0, about_y, g_width);
+    bot_draw_text(g_canvas, 20, about_y + 12, "About BotOS", th->fg, 1);
+    bot_draw_text(g_canvas, 20, about_y + 30, "BotOS Core 0.3.0", th->fg_dim, 1);
+    bot_draw_text(g_canvas, 20, about_y + 46, "Buildroot-based Linux, custom userspace", th->fg_dim, 1);
 
     bot_draw_separator(g_canvas, 0, g_height - STATUS_HEIGHT - 35, g_width);
     bot_draw_button(g_canvas, 20, g_height - STATUS_HEIGHT - 30, 160, 24, "Apply & Exit", BOT_BTN_NORMAL);
-    bot_draw_button(g_canvas, 220, g_height - STATUS_HEIGHT - 30, 160, 24, "Cancel", BOT_BTN_NORMAL);
+    bot_draw_button(g_canvas, g_width - 180, g_height - STATUS_HEIGHT - 30, 160, 24, "Cancel", BOT_BTN_NORMAL);
 
     bot_draw_separator(g_canvas, 0, g_height - STATUS_HEIGHT - 1, g_width);
     char status[128];
@@ -105,24 +128,22 @@ static void on_mouse_down(const bot_event_t *ev, void *data)
 {
     (void)data;
     int mx = ev->mouse.x, my = ev->mouse.y;
-    int start_y = TITLE_H + 45;
+    int btn_w = g_width - 40;
+    int btn_h = 30;
+    int start_y = TITLE_H + 38;
 
-    if (bot_button_hit(20, start_y, 360, 32, mx, my)) {
-        save_theme("dark");
-        g_needs_redraw = 1;
+    for (int i = 0; i < THEME_COUNT; i++) {
+        if (bot_button_hit(20, start_y + i * (btn_h + 6), btn_w, btn_h, mx, my)) {
+            save_theme(g_themes[i].id);
+            g_needs_redraw = 1;
+            return;
+        }
     }
-    else if (bot_button_hit(20, start_y + 40, 360, 32, mx, my)) {
-        save_theme("light");
-        g_needs_redraw = 1;
-    }
-    else if (bot_button_hit(20, start_y + 80, 360, 32, mx, my)) {
-        save_theme("matrix");
-        g_needs_redraw = 1;
-    }
-    else if (bot_button_hit(20, g_height - STATUS_HEIGHT - 30, 160, 24, mx, my)) {
+
+    if (bot_button_hit(20, g_height - STATUS_HEIGHT - 30, 160, 24, mx, my)) {
         bot_event_quit();
     }
-    else if (bot_button_hit(220, g_height - STATUS_HEIGHT - 30, 160, 24, mx, my)) {
+    else if (bot_button_hit(g_width - 180, g_height - STATUS_HEIGHT - 30, 160, 24, mx, my)) {
         bot_event_quit();
     }
 }
@@ -133,6 +154,20 @@ static void on_key_down(const bot_event_t *ev, void *data)
     if (ev->key.keycode == BOT_KEY_ESCAPE) {
         bot_event_quit();
     }
+}
+
+static void on_resize(const bot_event_t *ev, void *data)
+{
+    (void)data;
+    g_width = ev->resize.width;
+    g_height = ev->resize.height;
+    /* Keep window.c's own framebuffer in sync with the new size —
+     * otherwise the blit at the end of render_settings() overflows it
+     * as soon as the window manager resizes this window. */
+    bot_window_resize(g_window, g_width, g_height);
+    bot_canvas_destroy(g_canvas);
+    g_canvas = bot_canvas_create(g_width, g_height);
+    g_needs_redraw = 1;
 }
 
 int main(int argc, char *argv[])
@@ -150,6 +185,7 @@ int main(int argc, char *argv[])
 
     bot_event_on(BOT_EVENT_MOUSE_DOWN, on_mouse_down, NULL);
     bot_event_on(BOT_EVENT_KEY_DOWN, on_key_down, NULL);
+    bot_event_on(BOT_EVENT_RESIZE, on_resize, NULL);
 
     bot_window_show(g_window);
     render_settings();

@@ -212,6 +212,11 @@ int manifest_parse_string(const char *json, bot_package_t *out)
     json_get_string(json, "version",     out->version,     sizeof(out->version));
     json_get_string(json, "description", out->description, sizeof(out->description));
     json_get_string(json, "author",      out->author,      sizeof(out->author));
+    /* Optional: SHA-256 of the .botpkg archive, checked after download
+     * in botpkg_install() if present. Repos that don't publish one
+     * yet just get skipped-verification behavior, same as before this
+     * field existed. */
+    json_get_string(json, "sha256",      out->checksum,    sizeof(out->checksum));
 
     /* Validate required field */
     if (out->name[0] == '\0') {
@@ -269,8 +274,9 @@ char *manifest_to_json(const bot_package_t *pkg)
         "  \"version\": \"%s\",\n"
         "  \"description\": \"%s\",\n"
         "  \"author\": \"%s\",\n"
+        "  \"sha256\": \"%s\",\n"
         "  \"dependencies\": [",
-        pkg->name, pkg->version, pkg->description, pkg->author);
+        pkg->name, pkg->version, pkg->description, pkg->author, pkg->checksum);
 
     /* Write dependencies array */
     for (int i = 0; i < pkg->dep_count; i++) {

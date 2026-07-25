@@ -729,7 +729,19 @@ static int run_for_loop(const char *block)
         }
     }
     
-    char body[4096] = "";
+    /* The reconstructed body can never be longer than `block` itself
+     * (it's a contiguous subset of block's lines with the same '\n'
+     * separators restored), so sizing from strlen(block) is always a
+     * safe upper bound. This used to be a fixed `char body[4096]`
+     * filled via unchecked strcat — any for-loop body whose lines
+     * totaled more than 4KB silently overran the stack buffer. */
+    size_t body_cap = strlen(block) + 1;
+    char *body = calloc(1, body_cap);
+    if (!body) {
+        for (int i = 0; i < line_cnt; i++) free(lines[i]);
+        free(lines);
+        return 1;
+    }
     for (int i = body_start_idx; i < line_cnt; i++) {
         char *line_trimmed = lines[i];
         while (*line_trimmed == ' ' || *line_trimmed == '\t') line_trimmed++;
@@ -753,11 +765,17 @@ static int run_for_loop(const char *block)
         val_token = strtok(NULL, " \t\r\n");
     }
     
+    char *body_copy = malloc(body_cap);
+    if (!body_copy) {
+        for (int i = 0; i < val_cnt; i++) free(vals[i]);
+        free(body);
+        return 1;
+    }
+
     int last_exit = 0;
     for (int i = 0; i < val_cnt; i++) {
         setenv(var_name, vals[i], 1);
         
-        char body_copy[4096];
         strcpy(body_copy, body);
         
         char *line = body_copy;
@@ -783,6 +801,8 @@ static int run_for_loop(const char *block)
         free(vals[i]);
     }
     unsetenv(var_name);
+    free(body_copy);
+    free(body);
     return last_exit;
 }
 
@@ -820,8 +840,22 @@ static int run_if_statement(const char *block)
         }
     }
     
-    char then_body[4096] = "";
-    char else_body[4096] = "";
+    /* Sized from strlen(block): then_body and else_body are each a
+     * contiguous subset of block's lines, so block's own length is
+     * always a safe upper bound for both. This used to be two fixed
+     * `char [4096]` buffers filled via unchecked strcat — an if/else
+     * body whose lines totaled more than 4KB silently overran the
+     * stack buffer. */
+    size_t body_cap = strlen(block) + 1;
+    char *then_body = calloc(1, body_cap);
+    char *else_body = calloc(1, body_cap);
+    if (!then_body || !else_body) {
+        free(then_body);
+        free(else_body);
+        for (int i = 0; i < line_cnt; i++) free(lines[i]);
+        free(lines);
+        return 1;
+    }
     int in_else = 0;
     
     for (int i = body_start_idx; i < line_cnt; i++) {
@@ -851,7 +885,12 @@ static int run_if_statement(const char *block)
     int cond_res = botshell_exec_string(cond_str);
     char *body = (cond_res == 0) ? then_body : else_body;
     
-    char body_copy[4096];
+    char *body_copy = malloc(body_cap);
+    if (!body_copy) {
+        free(then_body);
+        free(else_body);
+        return 1;
+    }
     strcpy(body_copy, body);
     char *line = body_copy;
     char *next_line;
@@ -874,6 +913,9 @@ static int run_if_statement(const char *block)
         line = next_line + 1;
     }
     
+    free(body_copy);
+    free(then_body);
+    free(else_body);
     return last_exit;
 }
 
@@ -912,7 +954,20 @@ static int run_while_loop(const char *block)
         }
     }
     
-    char body[4096] = "";
+    /* Sized from strlen(block), the same safe-upper-bound reasoning as
+     * run_for_loop/run_if_statement. This used to be a fixed
+     * `char body[4096]` filled via unchecked strcat — confirmed via an
+     * instrumented test build that a 5170-byte while-body silently
+     * overran it (strlen(body) read back as 5170 inside the nominal
+     * 4096-byte array, with no crash — a real, silent stack corruption,
+     * not just a theoretical one). */
+    size_t body_cap = strlen(block) + 1;
+    char *body = calloc(1, body_cap);
+    if (!body) {
+        for (int i = 0; i < line_cnt; i++) free(lines[i]);
+        free(lines);
+        return 1;
+    }
     for (int i = body_start_idx; i < line_cnt; i++) {
         char *line_trimmed = lines[i];
         while (*line_trimmed == ' ' || *line_trimmed == '\t') line_trimmed++;
@@ -926,6 +981,12 @@ static int run_while_loop(const char *block)
     for (int i = 0; i < line_cnt; i++) free(lines[i]);
     free(lines);
     
+    char *body_copy = malloc(body_cap);
+    if (!body_copy) {
+        free(body);
+        return 1;
+    }
+
     int last_exit = 0;
     int iter = 0;
     const int max_iter = 1000;
@@ -943,7 +1004,6 @@ static int run_while_loop(const char *block)
             break;
         }
         
-        char body_copy[4096];
         strcpy(body_copy, body);
         
         char *line = body_copy;
@@ -967,6 +1027,8 @@ static int run_while_loop(const char *block)
         }
     }
     
+    free(body_copy);
+    free(body);
     return last_exit;
 }
 

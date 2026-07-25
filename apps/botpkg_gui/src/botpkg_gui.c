@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #define TITLE_H          24
 #define STATUS_HEIGHT    22
@@ -57,15 +59,63 @@ static void strip_ansi(char *str)
     *dst = '\0';
 }
 
-static void run_botpkg_cmd(const char *cmd)
+/* Runs the `botpkg` CLI directly via fork+execvp and captures its
+ * stdout/stderr through a pipe.
+ *
+ * `argv` must be a NULL-terminated array suitable for execvp(), with
+ * argv[0] == "botpkg" (e.g. {"botpkg", "search", query, NULL}). This
+ * intentionally never goes through a shell: previously this built a
+ * command *string* (e.g. "botpkg search %s" with the search box text
+ * spliced in) and handed it to popen(), which runs it via `/bin/sh -c`
+ * — so any shell metacharacter typed into the search box (";", "|",
+ * "$(...)", "&&", backticks, ...) was interpreted by the shell,
+ * letting anyone with access to this GUI run arbitrary commands.
+ * Passing each argument through execvp's argv array means the
+ * contents are always treated as a single literal string argument to
+ * botpkg, never as shell syntax. */
+static void run_botpkg_cmd(char *const argv[])
 {
     g_item_count = 0;
     g_selected_idx = -1;
     strncpy(g_status_msg, " Running command...", sizeof(g_status_msg)-1);
+    g_status_msg[sizeof(g_status_msg)-1] = '\0';
 
-    FILE *fp = popen(cmd, "r");
-    if (!fp) {
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
         strncpy(g_status_msg, " Error executing command", sizeof(g_status_msg)-1);
+        g_status_msg[sizeof(g_status_msg)-1] = '\0';
+        return;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        strncpy(g_status_msg, " Error executing command", sizeof(g_status_msg)-1);
+        g_status_msg[sizeof(g_status_msg)-1] = '\0';
+        return;
+    }
+
+    if (pid == 0) {
+        /* Child: send both stdout and stderr down the pipe (matching
+         * the errors-visible-in-output behavior popen("r") gave us),
+         * then replace this process with botpkg. No shell involved. */
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
+        execvp("botpkg", argv);
+        _exit(127); /* execvp only returns on failure */
+    }
+
+    close(pipefd[1]);
+    FILE *fp = fdopen(pipefd[0], "r");
+    if (!fp) {
+        close(pipefd[0]);
+        int status;
+        waitpid(pid, &status, 0);
+        strncpy(g_status_msg, " Error executing command", sizeof(g_status_msg)-1);
+        g_status_msg[sizeof(g_status_msg)-1] = '\0';
         return;
     }
 
@@ -87,9 +137,13 @@ static void run_botpkg_cmd(const char *cmd)
         }
 
         strncpy(g_items[g_item_count], line, sizeof(g_items[g_item_count])-1);
+        g_items[g_item_count][sizeof(g_items[g_item_count])-1] = '\0';
         g_item_count++;
     }
-    pclose(fp);
+    fclose(fp); /* also closes pipefd[0] */
+
+    int status;
+    waitpid(pid, &status, 0);
     snprintf(g_status_msg, sizeof(g_status_msg), " Done. %d items loaded.", g_item_count);
 }
 
@@ -152,15 +206,15 @@ static void on_mouse_down(const bot_event_t *ev, void *data)
     g_search_active = 0;
 
     if (bot_button_hit(290, TITLE_H + 30, 90, 24, mx, my)) {
-        char cmd[128];
-        snprintf(cmd, sizeof(cmd), "botpkg search %s", g_search_query);
-        run_botpkg_cmd(cmd);
+        char *argv[] = { "botpkg", "search", g_search_query, NULL };
+        run_botpkg_cmd(argv);
         g_needs_redraw = 1;
         return;
     }
 
     if (bot_button_hit(390, TITLE_H + 30, 190, 24, mx, my)) {
-        run_botpkg_cmd("botpkg list");
+        char *argv[] = { "botpkg", "list", NULL };
+        run_botpkg_cmd(argv);
         g_needs_redraw = 1;
         return;
     }
@@ -183,9 +237,8 @@ static void on_mouse_down(const bot_event_t *ev, void *data)
             char pkg_name[64] = "";
             sscanf(g_items[g_selected_idx], "%63s", pkg_name);
             if (strlen(pkg_name) > 0) {
-                char cmd[128];
-                snprintf(cmd, sizeof(cmd), "botpkg install %s", pkg_name);
-                run_botpkg_cmd(cmd);
+                char *argv[] = { "botpkg", "install", pkg_name, NULL };
+                run_botpkg_cmd(argv);
             }
         }
         g_needs_redraw = 1;
@@ -195,9 +248,8 @@ static void on_mouse_down(const bot_event_t *ev, void *data)
             char pkg_name[64] = "";
             sscanf(g_items[g_selected_idx], "%63s", pkg_name);
             if (strlen(pkg_name) > 0) {
-                char cmd[128];
-                snprintf(cmd, sizeof(cmd), "botpkg remove %s", pkg_name);
-                run_botpkg_cmd(cmd);
+                char *argv[] = { "botpkg", "remove", pkg_name, NULL };
+                run_botpkg_cmd(argv);
             }
         }
         g_needs_redraw = 1;
@@ -220,9 +272,8 @@ static void on_key_down(const bot_event_t *ev, void *data)
     if (g_search_active) {
         if (key == BOT_KEY_ENTER || key == '\n' || key == '\r') {
             g_search_active = 0;
-            char cmd[128];
-            snprintf(cmd, sizeof(cmd), "botpkg search %s", g_search_query);
-            run_botpkg_cmd(cmd);
+            char *argv[] = { "botpkg", "search", g_search_query, NULL };
+            run_botpkg_cmd(argv);
             g_needs_redraw = 1;
             return;
         }
@@ -247,6 +298,20 @@ static void on_key_down(const bot_event_t *ev, void *data)
     }
 }
 
+static void on_resize(const bot_event_t *ev, void *data)
+{
+    (void)data;
+    g_width = ev->resize.width;
+    g_height = ev->resize.height;
+    /* Keep window.c's own framebuffer in sync with the new size —
+     * otherwise the blit at the end of render_gui() overflows it as
+     * soon as the window manager resizes this window. */
+    bot_window_resize(g_window, g_width, g_height);
+    bot_canvas_destroy(g_canvas);
+    g_canvas = bot_canvas_create(g_width, g_height);
+    g_needs_redraw = 1;
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc; (void)argv;
@@ -258,10 +323,12 @@ int main(int argc, char *argv[])
     g_canvas = bot_canvas_create(g_width, g_height);
     if (!g_window || !g_canvas) return 1;
 
-    run_botpkg_cmd("botpkg list");
+    char *init_argv[] = { "botpkg", "list", NULL };
+    run_botpkg_cmd(init_argv);
 
     bot_event_on(BOT_EVENT_MOUSE_DOWN, on_mouse_down, NULL);
     bot_event_on(BOT_EVENT_KEY_DOWN, on_key_down, NULL);
+    bot_event_on(BOT_EVENT_RESIZE, on_resize, NULL);
 
     bot_window_show(g_window);
     render_gui();

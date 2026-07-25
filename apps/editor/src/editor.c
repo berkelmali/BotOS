@@ -394,6 +394,11 @@ static void on_resize(const bot_event_t *ev, void *data)
     (void)data;
     g_width = ev->resize.width;
     g_height = ev->resize.height;
+    /* See botterm.c's on_resize for why this call is required: without
+     * it, window.c's framebuffer stays the old size and the blit at
+     * the end of render() overflows it as soon as anything external
+     * (the WM) resizes this window. */
+    bot_window_resize(g_window, g_width, g_height);
     bot_canvas_destroy(g_canvas);
     g_canvas = bot_canvas_create(g_width, g_height);
     clamp_cursor();

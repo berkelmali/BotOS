@@ -300,6 +300,12 @@ static void on_resize(const bot_event_t *ev, void *data)
     (void)data;
     g_width = ev->resize.width;
     g_height = ev->resize.height;
+    /* Keep window.c's own framebuffer in sync with the new size too —
+     * only resizing our canvas here left it stale, so the later
+     * memcpy(fb, canvas_pixels, new_w*new_h*4) blit would write past
+     * the end of the still-old-sized framebuffer the moment anything
+     * external (the WM, now) actually resized this window. */
+    bot_window_resize(g_window, g_width, g_height);
     bot_canvas_destroy(g_canvas);
     g_canvas = bot_canvas_create(g_width, g_height);
     g_needs_redraw = 1;
