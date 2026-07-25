@@ -20,6 +20,7 @@ typedef struct bot_package {
     char    version[32];
     char    description[256];
     char    author[64];
+    char    checksum[65];  /**< SHA-256 hex digest of the .botpkg archive, or empty if unset. */
     int     dep_count;
     char  (*deps)[64];   /**< Array of dependency names. */
 } bot_package_t;

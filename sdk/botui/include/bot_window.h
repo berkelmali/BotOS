@@ -70,6 +70,19 @@ void bot_window_toggle_maximize(void);
 /** Flip the active window. */
 void bot_window_flip_active(void);
 
+/**
+ * Get the backend-native window handle.
+ *
+ * On the X11 backend this is the Window XID, cast to unsigned long.
+ * On the framebuffer backend (no native windowing system exists to
+ * hand out a handle for) this always returns 0.
+ *
+ * Intended for window-manager code (e.g. BotDesk) that needs to
+ * reparent or otherwise directly manipulate windows via Xlib — most
+ * callers should never need this.
+ */
+unsigned long bot_window_get_native_handle(bot_window_t *win);
+
 #ifdef __cplusplus
 }
 #endif

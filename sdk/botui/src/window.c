@@ -50,9 +50,11 @@ static bot_window_t *g_active_window = NULL;
 
 /* ── X11 Global State ────────────────────────────────────── */
 
-static Display *g_display = NULL;
+/* External linkage: event.c declares these `extern` to pump the X11
+ * event queue against the same display connection this file opens. */
+Display *g_display = NULL;
 static int      g_screen  = 0;
-static Atom     g_wm_delete_message;
+Atom     g_wm_delete_message;
 static int      g_display_refcount = 0;
 
 /**
@@ -307,6 +309,11 @@ void bot_window_get_screen_size(int *w, int *h)
 int bot_window_should_close(const bot_window_t *win)
 {
     return win ? win->should_close : 1;
+}
+
+unsigned long bot_window_get_native_handle(bot_window_t *win)
+{
+    return win ? (unsigned long)win->xwin : 0;
 }
 
 #endif /* BOTOS_HAS_X11 */
@@ -575,6 +582,12 @@ void bot_window_destroy(bot_window_t *win)
 int bot_window_should_close(const bot_window_t *win)
 {
     return win ? win->should_close : 1;
+}
+
+unsigned long bot_window_get_native_handle(bot_window_t *win)
+{
+    (void)win;
+    return 0; /* no native window handle exists on the framebuffer backend */
 }
 
 void bot_window_get_screen_size(int *w, int *h)

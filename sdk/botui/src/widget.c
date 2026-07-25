@@ -151,9 +151,169 @@ static const unsigned char g_font[128][7] = {
 
 /* ── Text Rendering ──────────────────────────────────────── */
 
+#ifdef BOTOS_HAS_FREETYPE
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include <stdlib.h>
+
+/* Real, anti-aliased TTF glyph rendering, used automatically in place
+ * of the bitmap font above when a FreeType-capable build can actually
+ * load the bundled font. Every layout in this codebase (button
+ * heights, line spacing, icon label placement, ...) was written
+ * around the bitmap font's fixed BOT_CHAR_W x BOT_CHAR_H cell, so
+ * this deliberately keeps drawing into that exact same cell — same
+ * (px, py, scale) contract, same bot_measure_text() advance — rather
+ * than switching to the font's own (proportional, differently sized)
+ * metrics. Only the ink inside each cell gets nicer; nothing that
+ * currently depends on fixed-width text layout has to change.
+ *
+ * If the font file can't be found or FreeType fails to initialize,
+ * ft_try_init() returns 0 once and every caller falls straight back
+ * to the bitmap glyphs below — there's no hard dependency either way.
+ */
+
+#define FT_GLYPH_CACHE_SIZE 512
+
+typedef struct {
+    int used;
+    int ch;
+    int pixel_size;
+    int width, height;
+    int left, top;
+    unsigned char *bitmap; /* width*height bytes, 8-bit alpha coverage */
+} ft_glyph_cache_t;
+
+static FT_Library        ft_library;
+static FT_Face            ft_face;
+static int                ft_state = 0;  /* 0=untried, 1=ready, -1=unavailable */
+static ft_glyph_cache_t   ft_cache[FT_GLYPH_CACHE_SIZE];
+static int                ft_cache_count = 0;
+
+static int ft_try_init(void)
+{
+    if (ft_state != 0) return ft_state == 1;
+
+    const char *candidates[] = {
+        "/usr/share/botos/fonts/DejaVuSansMono.ttf",
+#ifdef BOTOS_FONT_DEV_PATH
+        BOTOS_FONT_DEV_PATH,
+#endif
+        NULL
+    };
+
+    if (FT_Init_FreeType(&ft_library) != 0) {
+        ft_state = -1;
+        return 0;
+    }
+
+    for (int i = 0; candidates[i]; i++) {
+        if (FT_New_Face(ft_library, candidates[i], 0, &ft_face) == 0) {
+            ft_state = 1;
+            return 1;
+        }
+    }
+
+    FT_Done_FreeType(ft_library);
+    ft_state = -1;
+    return 0;
+}
+
+static ft_glyph_cache_t *ft_get_glyph(int ch, int pixel_size)
+{
+    for (int i = 0; i < ft_cache_count; i++) {
+        if (ft_cache[i].used && ft_cache[i].ch == ch &&
+            ft_cache[i].pixel_size == pixel_size) {
+            return &ft_cache[i];
+        }
+    }
+    if (ft_cache_count >= FT_GLYPH_CACHE_SIZE) {
+        /* Cache full — extremely unlikely given ASCII x a handful of
+         * scale factors, but stop growing rather than overflow it;
+         * already-cached glyphs keep rendering correctly. */
+        return NULL;
+    }
+
+    FT_Set_Pixel_Sizes(ft_face, 0, (unsigned)pixel_size);
+    if (FT_Load_Char(ft_face, (unsigned long)ch, FT_LOAD_RENDER) != 0) {
+        return NULL;
+    }
+
+    FT_GlyphSlot slot = ft_face->glyph;
+    ft_glyph_cache_t *entry = &ft_cache[ft_cache_count];
+    entry->ch         = ch;
+    entry->pixel_size = pixel_size;
+    entry->width      = (int)slot->bitmap.width;
+    entry->height     = (int)slot->bitmap.rows;
+    entry->left       = slot->bitmap_left;
+    entry->top        = slot->bitmap_top;
+    entry->bitmap     = NULL;
+
+    size_t n = (size_t)entry->width * (size_t)entry->height;
+    if (n > 0) {
+        entry->bitmap = malloc(n);
+        if (entry->bitmap) memcpy(entry->bitmap, slot->bitmap.buffer, n);
+    }
+    entry->used = 1;
+    ft_cache_count++;
+    return entry;
+}
+
+static void ft_blend_pixel(bot_canvas_t *c, int x, int y,
+                           bot_color_t fg, unsigned char alpha)
+{
+    if (alpha == 0) return;
+    int cw = bot_canvas_width(c), ch = bot_canvas_height(c);
+    if (x < 0 || y < 0 || x >= cw || y >= ch) return;
+
+    uint32_t *px = bot_canvas_get_pixels(c);
+    if (!px) return;
+
+    uint32_t bg = px[(size_t)y * (size_t)cw + (size_t)x];
+    int bg_r = (int)((bg >> 16) & 0xFF), bg_g = (int)((bg >> 8) & 0xFF), bg_b = (int)(bg & 0xFF);
+    int fg_r = (int)((fg >> 16) & 0xFF), fg_g = (int)((fg >> 8) & 0xFF), fg_b = (int)(fg & 0xFF);
+
+    int out_r = (fg_r * alpha + bg_r * (255 - alpha)) / 255;
+    int out_g = (fg_g * alpha + bg_g * (255 - alpha)) / 255;
+    int out_b = (fg_b * alpha + bg_b * (255 - alpha)) / 255;
+
+    px[(size_t)y * (size_t)cw + (size_t)x] =
+        0xFF000000u | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
+}
+
+/* Returns 1 if it drew the glyph (caller should not fall back), 0 if
+ * FreeType isn't usable or this character has no renderable glyph. */
+static int ft_draw_char(bot_canvas_t *c, int px, int py,
+                        char ch, bot_color_t color, int scale)
+{
+    if (!ft_try_init()) return 0;
+    unsigned char idx = (unsigned char)ch;
+    if (idx >= 128) return 0;
+
+    /* ~8px em at scale 1 lands the glyph ink in roughly the same
+     * footprint the 5x7 bitmap font occupied. */
+    int pixel_size = 8 * (scale <= 1 ? 1 : scale);
+    ft_glyph_cache_t *g = ft_get_glyph(idx, pixel_size);
+    if (!g) return 0;
+    if (!g->bitmap) return 1; /* space or similarly ink-free glyph: nothing to draw, handled */
+
+    int baseline_y = py + (BOT_CHAR_H - 2) * (scale <= 1 ? 1 : scale);
+    for (int gy = 0; gy < g->height; gy++) {
+        for (int gx = 0; gx < g->width; gx++) {
+            unsigned char a = g->bitmap[(size_t)gy * (size_t)g->width + (size_t)gx];
+            ft_blend_pixel(c, px + g->left + gx, baseline_y - g->top + gy, color, a);
+        }
+    }
+    return 1;
+}
+#endif /* BOTOS_HAS_FREETYPE */
+
 void bot_draw_char(bot_canvas_t *c, int px, int py,
                    char ch, bot_color_t color, int scale)
 {
+#ifdef BOTOS_HAS_FREETYPE
+    if (ft_draw_char(c, px, py, ch, color, scale)) return;
+#endif
+
     unsigned char idx = (unsigned char)ch;
     if (idx >= 128) return;
 
@@ -417,6 +577,51 @@ void bot_theme_load(void)
         t->cursor       = 0xFF00FF00;
         t->highlight    = 0xFF0A150A;
         t->separator    = 0xFF004400;
+    } else if (strcmp(theme_name, "cyberpunk") == 0) {
+        t->bg           = 0xFF0D0221;
+        t->fg           = 0xFF00F0FF;
+        t->fg_dim       = 0xFF7A5C99;
+        t->accent       = 0xFFFF2E9A;
+        t->panel        = 0xFF1A0B33;
+        t->panel_border = 0xFF7A2E8C;
+        t->btn_normal   = 0xFF2B1249;
+        t->btn_hover    = 0xFF3D1A66;
+        t->btn_active   = 0xFF5C1F7A;
+        t->status_bg    = 0xFF3D0066;
+        t->status_fg    = 0xFF00F0FF;
+        t->cursor       = 0xFFFF2E9A;
+        t->highlight    = 0xFF241040;
+        t->separator    = 0xFF4A2266;
+    } else if (strcmp(theme_name, "forest") == 0) {
+        t->bg           = 0xFF16241A;
+        t->fg           = 0xFFDCE8D5;
+        t->fg_dim       = 0xFF7A9070;
+        t->accent       = 0xFFC9A227;
+        t->panel        = 0xFF1E2E22;
+        t->panel_border = 0xFF4A6B45;
+        t->btn_normal   = 0xFF2A3D2A;
+        t->btn_hover    = 0xFF375035;
+        t->btn_active   = 0xFF4A6B3A;
+        t->status_bg    = 0xFF2D4A2A;
+        t->status_fg    = 0xFFF0EAD6;
+        t->cursor       = 0xFFC9A227;
+        t->highlight    = 0xFF223322;
+        t->separator    = 0xFF3A5236;
+    } else if (strcmp(theme_name, "ocean") == 0) {
+        t->bg           = 0xFF0A1929;
+        t->fg           = 0xFFD5EEF5;
+        t->fg_dim       = 0xFF6B8FA3;
+        t->accent       = 0xFF1FC8C8;
+        t->panel        = 0xFF0F2438;
+        t->panel_border = 0xFF2E5C77;
+        t->btn_normal   = 0xFF1A3550;
+        t->btn_hover    = 0xFF234563;
+        t->btn_active   = 0xFF1F6B7A;
+        t->status_bg    = 0xFF0F4C5C;
+        t->status_fg    = 0xFFE0F7FA;
+        t->cursor       = 0xFF1FC8C8;
+        t->highlight    = 0xFF15304A;
+        t->separator    = 0xFF1F4560;
     } else {
         /* Default Dark */
         t->bg           = 0xFF181820;
