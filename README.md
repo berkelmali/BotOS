@@ -1,5 +1,6 @@
 # 🖥️ BotOS Core — Premium Developer-First Operating System Platform
 
+![CI Pipeline](https://github.com/berkelmali/BotOS/actions/workflows/ci.yml/badge.svg)
 ![Architecture](https://img.shields.io/badge/Architecture-x86__64-3b82f6?style=flat&logo=cpu)
 ![Kernel](https://img.shields.io/badge/Kernel-Linux%20LTS-eab308?style=flat&logo=linux)
 ![C11](https://img.shields.io/badge/C-11-22c55e?style=flat&logo=c)
